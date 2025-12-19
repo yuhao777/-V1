@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>嘉義就醫專車（勾選）</title>
+  <style>
+    body { font-family: Arial, Helvetica, sans-serif; margin: 0; }
+    #map { height: 100vh; width: calc(100% - 300px); float: right; }
+    #controls { width: 300px; float: left; padding: 12px; box-sizing: border-box; background: #fafafa; border-right: 1px solid #eee; height: 100vh; overflow-y: auto; }
+    h3 { margin-top: 6px; margin-bottom: 8px; }
+    .region { margin-bottom: 12px; }
+    .region-header { display:flex; align-items:center; justify-content:space-between; }
+    .route-row { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
+    .route-item { display:flex; align-items:center; gap:6px; padding:6px 8px; border-radius:8px; background:#fff; box-shadow:0 0 0 1px #eee inset; cursor:pointer; user-select:none; }
+    .route-item input { transform:scale(1.05); }
+    .small-btn { font-size:12px; padding:4px 8px; border-radius:6px; border:1px solid #ddd; background:#fff; cursor:pointer; }
+    .hint { font-size:12px; color:#666; margin-top:6px; }
+  </style>
+</head>
+<body>
+  <div id="controls">
+    <h3>路線選擇</h3>
+
+    <!-- 三個地區容器會由 JS 動態產生 -->
+    <div id="groupsContainer"></div>
+
+    <div class="hint">
+      範例
+    </div>
+  </div>
+
+  <div id="map"></div>
+
+  <!-- 替換成你的 API Key -->
+  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDa_W-EEeDljwQQdhOxvKvJhHZ-Wznh9eU"></script>
+  <script>
+    // ---------- 基本變數 ----------
+    let map, directionsService, infoWindow;
+    const routeRenderers = {}; // 儲存每條路線的 renderer & markers
+
+    // ---------- 路線資料（示範） ----------
+    // region: "嘉義地區" / "台南地區" / "雲林地區"
+    const routes = [
+      // ===== 嘉義地區（5） =====
+      { name: "嘉太線",   color: "cyan",    region: "嘉義地區", labelPos: { lat: 23.45, lng: 120.45 }, 
+      points: [
+          { name: "嘉義後火車站", lat: 23.480306152088, lng: 120.439763918229 },
+          { name: "嘉義署立醫院", lat: 23.4807933478079, lng: 120.429184687873 },
+          { name: "北港路富邦當鋪", lat: 23.4842049528132, lng: 120.423233808487 },
+          { name: "北港路現代汽車", lat: 23.4859166960068, lng: 120.418102642843 },
+          { name: "北港路台亞嘉義交流道加油站", lat: 23.4924008011164, lng: 120.397458684657 },
+          { name: "水牛厝五聖恩主公廟拱門口", lat: 23.4960130885514, lng: 120.387793142705 },
+          { name: "蕭登標服務處", lat: 23.4981680310714, lng: 120.380844615703 },
+          { name: "麻魚寮全聯社", lat: 23.4983377653998, lng: 120.376773718302 },
+          { name: "麻太路農會", lat: 23.4986718764346, lng: 120.366062695432 },
+          { name: "麻太路萊爾富", lat: 23.4975946917403, lng: 120.363036388939 },
+          { name: "頂新宮", lat: 23.4990889998888, lng: 120.358792970737 },
+          { name: "麻太路福安宮", lat: 23.491692737188, lng: 120.353552197927},
+          { name: "新埤勞工住宅", lat: 23.4916541443789, lng: 120.341862178691},
+          { name: "新埤派出所", lat: 23.4908663315431, lng: 120.332904172594},
+          { name: "新埤國小", lat: 23.4856377118929, lng: 120.335074919164},
+          { name: "太保市公所", lat: 23.4589075542573, lng: 120.332613690645},
+          { name: "太保國小", lat: 23.4542520500339, lng: 120.33118324308},
+          { name: "高鐵二號門", lat: 23.458951769464, lng: 120.322614677641},
+          { name: "嘉義長庚", lat: 23.46224401366492, lng: 120.28593830205163 }
+        ] },
+      { name: "新塭線",   color: "magenta", region: "嘉義地區", labelPos: { lat: 23.53, lng: 120.17 },
+      points: [
+          { name: "美好里太聖宮", lat: 23.3358144208426, lng: 120.137861257497 },
+          { name: "新塭農會", lat: 23.3266066693356, lng: 120.159264134747 },
+          { name: "新岑里海國宮", lat: 23.3432519385979, lng: 120.171161530498 },
+          { name: "永安里永安宮", lat: 23.3715808313228, lng: 120.184396744918 },
+          { name: "景山派出所", lat: 23.3740104217157, lng: 120.187201253329 },
+          { name: "東港里龍山宮", lat: 23.3770980538931, lng: 120.189290662453 },
+          { name: "蕭厝大帝廟", lat: 23.3841701873224, lng: 120.181615991697 },
+          { name: "江山里五王府", lat: 23.3830614369144, lng: 120.199740664417 },
+          { name: "考試里保安宮", lat: 23.3995440999624, lng: 120.201383081496 },
+          { name: "樹林里路口", lat: 23.4161370630935, lng: 120.217586810121 },
+          { name: "貴舍真武廟", lat: 23.4256031900444, lng: 120.211817447666 },
+          { name: "龍岡派出所", lat: 23.4320679822846, lng: 120.191198255709},
+          { name: "中洲牌樓", lat: 23.4419086608458, lng: 120.197652761372},
+          { name: "半月路口", lat: 23.4486660870318, lng: 120.202543158425},
+          { name: "東石農會港墘辦事處", lat: 23.4630369130129, lng: 120.21476434662},
+          { name: "朴子圓光寺", lat: 23.4634240664719, lng: 120.236315103399},
+          { name: "朴子燦坤", lat: 23.4587232871121, lng: 120.241615887728},
+          { name: "嘉義長庚", lat: 23.46224401366492, lng: 120.28593830205163 }
+        ] }, 
+      { name: "布袋線",   color: "navy",    region: "嘉義地區", labelPos: { lat: 23.38, lng: 120.16 },
+      points: [
+          { name: "布袋轉運站", lat: 23.3791208276006, lng: 120.167105137821 },
+          { name: "布袋鎮農會", lat: 23.3783889755432, lng: 120.162183589075 },
+          { name: "布袋東宮廟", lat: 23.3792390159269, lng: 120.15841690657 },
+          { name: "布袋遊客中心", lat: 23.3818402649758, lng: 120.155658197436},
+          { name: "新厝廟後", lat: 23.3857385192968, lng: 120.171137829783 },
+          { name: "過溝漁會辦事處", lat: 23.4165497591252, lng: 120.178189328348 },
+          { name: "過溝郵局", lat: 23.4201683507772, lng: 120.182191874679 },
+          { name: "磚仔窯公車站", lat: 23.4263788866657, lng: 120.187261022707 },
+          { name: "栗仔崙公車站", lat: 23.4321604172728, lng: 120.190730172031 },
+          { name: "塭仔陳家祠", lat: 23.4371355518689, lng: 120.176012102881 },
+          { name: "東石全家便利商店", lat: 23.4574475730469, lng: 120.15166830347 },
+          { name: "萬善同居停車場", lat: 23.4689479366304, lng: 120.146658131131},
+          { name: "型厝福安宮", lat: 23.4736677086467, lng: 120.153212218758},
+          { name: "三家村福靈宮", lat: 23.4707006566975, lng: 120.172702146993},
+          { name: "永屯社區7-11", lat: 23.4598247956236, lng: 120.173501662905},
+          { name: "圍潭牌樓", lat: 23.4594869060136, lng: 120.198053470315},
+          { name: "蔦松松湖宮", lat: 23.4719826657936, lng: 120.217389540828},
+          { name: "應菜埔日香堂", lat: 23.4640780896387, lng: 120.230162484824},
+          { name: "應菜埔郵局", lat: 23.4638389113248, lng: 120.238790306262},
+          { name: "朴子郵局", lat: 23.4662654590498, lng: 120.246118221573},
+          { name: "嘉義長庚", lat: 23.46224401366492, lng: 120.28593830205163 }
+        ] }, 
+      { name: "中埔線",   color: "lime",    region: "嘉義地區", labelPos: { lat: 23.44, lng: 120.52 },
+      points: [
+          { name: "中埔鄉公所", lat: 23.4248524127776, lng: 120.52257647011 },
+          { name: "石頭厝下庄客運站牌", lat: 23.4278631547539, lng: 120.517214674138 },
+          { name: "金蘭社區外候車亭", lat: 23.4392551647422, lng: 120.503442073357},
+          { name: "頂六國小站", lat: 23.4461747226423, lng: 120.494258960432},
+          { name: "大義路上茗華園茶店", lat: 23.457868637635, lng: 120.474203018881 },
+          { name: "立仁街宣信路交叉口7-11", lat: 23.464884685685, lng: 120.46349359091 },
+          { name: "輔仁中學站牌", lat: 23.4611354935634, lng: 120.457115730169 },
+          { name: "吳鳳南路麥當勞對面", lat: 23.4562437888872, lng: 120.458680786421 },
+          { name: "全家便利商店(武德街與吳鳳南路交叉口)", lat: 23.4532501038411, lng: 120.45989361367 },
+          { name: "中埔農會和興辦事處", lat: 23.4499916145098, lng: 120.459353472567 },
+          { name: "平實街便利商店", lat: 23.4455298718622, lng: 120.45715949452},
+          { name: "中埔仁友醫院對面豐沛力早餐店", lat: 23.4392204481606, lng: 120.453757713927},
+          { name: "中庄派出所", lat: 23.4211621668678, lng: 120.437900501126},
+          { name: "中庄碾米廠", lat: 23.4213885462286, lng: 120.437229994611},
+          { name: "民生護理之家", lat: 23.4229241953787, lng: 120.431293596398},
+          { name: "嘉義長庚", lat: 23.46224401366492, lng: 120.28593830205163 }
+        ] },  
+      { name: "水上線",   color: "black",   region: "嘉義地區", labelPos: { lat: 23.43, lng: 120.41 },
+        points: [
+          { name: "嘉義市慶昇醫院", lat: 23.48002222957, lng: 120.444069511872 },
+          { name: "垂楊路寶雅", lat: 23.4731750932322, lng: 120.443306323561},
+          { name: "經國新城(西門街)", lat: 23.4698583641298, lng:120.444115016515},
+          { name: "嘉大民生後門", lat: 23.4637884538967, lng: 120.444718278735},
+          { name: "幸福幼稚園", lat: 23.4610751608899, lng: 120.443973816505 },
+          { name: "湖子內上帝廟", lat: 23.4540252464128, lng: 120.440541547676},
+          { name: "民生社區外福懋加油站", lat: 23.4525603156404, lng: 120.431878833557},
+          { name: "和雲寺牌樓對面", lat: 23.4467319514064, lng: 120.425580145453},
+          { name: "柳林國小", lat: 23.4356420437252, lng: 120.415831695145},
+          { name: "苦提寺站牌", lat:23.4310421063479, lng:120.414028753427},
+          { name: "凌雲二村站牌", lat: 23.4299044982969, lng: 120.409319090392},
+          { name: "水上鄉公所", lat: 23.4299341672521, lng: 120.409021939876},
+          { name: "水上郵局", lat: 23.4308864392244, lng:120.401247768125},
+          { name: "龍德村圓環", lat:23.4271324735053, lng:120.393784054069},
+          { name: "新發寺前", lat: 23.4133424395523, lng: 120.37251731205},
+          { name: "鳳凰社區站牌", lat: 23.4109573964947, lng: 120.357493358605},
+          { name: "後堀活動中心", lat: 23.4048327764889, lng: 120.340599006426},
+          { name: "山仔腳", lat: 23.4077863004858, lng: 120.322373689209},
+          { name: "鹿草國中", lat: 23.4092661795083, lng: 120.31284105364},
+          { name: "圓山宮廟口", lat: 23.413600857672, lng: 120.306460986899},
+          { name: "路草社區新安宮", lat: 23.413600857672, lng: 120.311910448093},
+          { name: "嘉義長庚", lat: 23.46224401366492, lng: 120.28593830205163 }
+        ] },   
+
+      // ===== 台南地區（5） =====
+      { name: "東山線",   color: "blue",    region: "台南地區", labelPos: { lat: 23.36, lng: 120.40 },
+        // 下面用你之前提供的真實站點
+        points: [
+          { name: "青山里", lat: 23.28365833626127, lng: 120.47917961503822 },
+          { name: "瓦厝", lat: 23.26912269930191, lng: 120.44789113267703 },
+          { name: "東原國小活動中心", lat: 23.26570978082856, lng: 120.44584169390899 },
+          { name: "大客", lat: 23.31158253127116, lng: 120.40998264071182 },
+          { name: "東山碧軒寺口", lat: 23.32553182795476, lng: 120.40327378773425 },
+          { name: "新營客運白河站", lat: 23.347322981035813, lng: 120.41381854060445 },
+          { name: "福安宮", lat: 23.35081602491324, lng: 120.4158509130468 },
+          { name: "大竹國小", lat: 23.368259507802446, lng: 120.4123470389607 },
+          { name: "玉豐阿匹婆商店", lat: 23.377705279178915, lng: 120.41707990906225 },
+          { name: "土溝紅綠燈", lat: 23.376786974037067, lng: 120.39254649928269 },
+          { name: "上茄苳顯濟宮", lat: 23.38661530778095, lng: 120.38113887871474 },
+          { name: "南靖車站", lat: 23.413434687062427, lng: 120.38638662830598 },
+          { name: "嘉義長庚", lat: 23.46224401366492, lng: 120.28593830205163 }
+        ]
+      },
+      { name: "新營A線",   color: "green",   region: "台南地區", labelPos: { lat: 23.32, lng: 120.32 },
+     points: [
+          { name: "新營火車站", lat: 23.306849909792, lng: 120.322962850506 },
+          { name: "新營區公所", lat:23.3102170635016, lng:120.316317295085 },
+          { name: "大台中五金百貨", lat: 23.3043241778856, lng: 120.301895789664 },
+          { name: "全聯福利中心", lat: 23.3075584108149, lng: 120.300105506986},
+          { name: "三興街教會", lat: 23.3179892718683, lng: 120.309000138343},
+          { name: "後鎮派出所", lat:23.3303069660944, lng: 120.312803392675 },
+          { name: "竹圍後竹新里中山堂", lat:23.34222597218568, lng:120.302157447407},
+          { name: "白沙屯公車站", lat:23.3727209480831, lng:120.312670175598},
+          { name: "三角村", lat: 23.4033007240598, lng: 120.332874369865},
+          { name: "圓山宮廟口", lat: 23.413600857672, lng:120.306460986899},
+          { name: "嘉義長庚", lat: 23.46224401366492, lng: 120.28593830205163 }
+        ]},
+      { name: "新營B線",   color: "green",   region: "台南地區", labelPos: { lat: 23.32, lng: 120.32 },
+     points: [
+          { name: "新營火車站", lat: 23.306849909792, lng: 120.322962850506 },
+          { name: "新營區公所", lat:23.3102170635016, lng:120.316317295085 },
+          { name: "大台中五金百貨", lat: 23.3043241778856, lng: 120.301895789664 },
+          { name: "大新營加油站", lat: 23.306524939132, lng: 120.293970291085},
+          { name: "新營太子宮", lat: 23.2953641114914, lng: 120.273660408904 },
+          { name: "護庇宮", lat: 23.3182804230094, lng: 120.267563748626 },
+          { name: "京城銀行", lat:23.3203110946568, lng:120.267797430021},
+          { name: "全家便利商店(金和路上)", lat: 23.3243824262914, lng: 120.262958889969},
+          { name: "厚生橋車站", lat: 23.334673137971, lng: 120.248903732671},
+          { name: "義竹郵局對面", lat: 23.3373402078346, lng:120.243350968358},
+          { name: "來來超市", lat: 23.3384671009591, lng:120.248007834866},
+          { name: "岸腳活動中心", lat: 23.3404977709511, lng:120.25135829234},
+          { name: "圓山宮廟口", lat: 23.413600857672, lng:120.306460986899},
+          { name: "嘉義長庚", lat: 23.46224401366492, lng: 120.28593830205163 }
+        ]},
+     
+      { name: "關子嶺線", color: "red",     region: "台南地區", labelPos: { lat: 23.37, lng: 120.42 },
+        points: [
+          { name: "關子嶺統茂大飯店", lat: 23.3365788496114, lng: 120.504223096527 },
+          { name: "仙草埔榮民之家", lat: 23.343564429590124, lng: 120.47745113766184 },
+          { name: "仙草國小", lat: 23.345030538430635, lng: 120.47412413054091 },
+          { name: "虎子墓", lat: 23.35020359569423, lng: 120.45144785634157 },
+          { name: "河東", lat: 23.34313174983779, lng: 120.43498416853184 },
+          { name: "新營客運白河站", lat: 23.347322981035813, lng: 120.41381854060445 },
+          { name: "福安宮", lat: 23.35081602491324, lng: 120.4158509130468 },
+          { name: "燦坤站", lat: 23.349005009233707, lng: 120.41252481865992 },
+          { name: "漁市站", lat: 23.349574787498323, lng: 120.41165329436213 },
+          { name: "上秀祐舉人廟前榕樹下", lat: 23.349272701220638, lng: 120.40246228018884 },
+          { name: "後壁鄉美而美草餐", lat: 23.364858576619408, lng: 120.36503695815908 },
+          { name: "後壁鄉公所", lat: 23.36583741341337, lng: 120.36225421157678 },
+          { name: "前菁寮", lat: 23.376465144047323, lng: 120.34589678697093 },
+          { name: "菁寮國小", lat: 23.378667698741303, lng: 120.33947993255701 },
+          { name: "菁寮義昌米廠前路口", lat: 23.380150520699516, lng: 120.3366828768043 },
+          { name: "後廍站", lat: 23.38643476489389, lng: 120.33673186764598 },
+          { name: "三角村", lat: 23.40330072405983, lng: 120.33287436986588 },
+          { name: "嘉義長庚", lat: 23.46224401366492, lng: 120.28593830205163 }
+        ]
+      },
+      { name: "六甲線",   color: "purple",  region: "台南地區", labelPos: { lat: 23.28, lng: 120.35 },
+    points: [
+          { name: "六甲公所", lat: 23.2316260591456, lng: 120.347245973914 },
+          { name: "中山路社區公車站", lat: 23.2346419483332, lng: 120.33539155876 },
+          { name: "中社公車亭", lat: 23.2372137228508, lng: 120.324255987861 },
+          { name: "龜子港公車站", lat: 23.2531911721687, lng: 120.312604441827 },
+          { name: "柳營國小", lat: 23.2753669588234, lng: 120.312712429055},
+          { name: "八翁里公車站", lat: 23.2761896531312, lng: 120.303223649252 },
+          { name: "新營太子宮", lat: 23.2953641114914, lng: 120.273660408904 },
+          { name: "護庇宮", lat: 23.3182804230094, lng: 120.267563748626 },
+          { name: "京城銀行", lat: 23.3203110946568, lng: 120.267797430021 },
+          { name: "七歲姑娘廟", lat: 23.323643150549, lng: 120.272091508643 },
+          { name: "汫水港忠孝宮", lat: 23.3471979136904, lng: 120.273144103372 },
+          { name: "下潭雲龍宮", lat: 23.3750081872472, lng: 120.286291243932 },
+          { name: "頂潭龍湖宮", lat: 23.3845975579519, lng: 120.296716960699 },
+          { name: "重寮城隍廟", lat: 23.3943892965096, lng: 120.3163325854 },
+          { name: "嘉義長庚", lat: 23.46224401366492, lng: 120.28593830205163 }
+        ] },
+      { name: "學甲線",   color: "orange",  region: "台南地區", labelPos: { lat: 23.23, lng: 120.18 },
+      points: [
+          { name: "學甲區公所", lat: 23.2305368731728, lng: 120.182579491023 },
+          { name: "慈濟宮", lat: 23.232928251356, lng: 120.180344402798 },
+          { name: "學甲宅仔港", lat: 23.2584586153517, lng: 120.205101472864},
+          { name: "歡雅派出所", lat: 23.2924971269036, lng: 120.242442344122},
+          { name: "台塑加油站", lat: 23.3148529654261, lng: 120.266267673803},
+          { name: "護庇宮", lat: 23.3182804230094, lng: 120.267563748626},
+          { name: "京城銀行", lat: 23.3203110946568, lng: 120.267797430021},
+          { name: "全家便利商店(金和路上)", lat: 23.3243824262914, lng: 120.262958889969},
+          { name: "厚生橋車站", lat:23.334673137971, lng: 120.248903732671 },
+          { name: "義竹郵局", lat: 23.3373402078346, lng: 120.243350968358},
+          { name: "來來超市", lat: 23.3384671009591, lng: 120.248007834866},
+          { name: "岸腳活動中心", lat: 23.3750081872472, lng: 120.286291243932 },
+          { name: "東後寮派出所", lat: 23.3797693551651, lng: 120.244418352427},
+          { name: "溪洲社區鳳山宮公車站牌", lat: 23.390321512126, lng: 120.243436172607},
+          { name: "牛桃灣萊爾富便利商店", lat: 23.4143619120318, lng: 120.247012273826},
+          { name: "嘉義縣養豬協會", lat: 23.4418847024811, lng: 120.245766919945},
+          { name: "朴子轉運站", lat:23.4590637067737, lng: 120.248403840516},
+          { name: "嘉義長庚", lat: 23.46224401366492, lng: 120.28593830205163 }
+        ] }, 
+
+      // ===== 雲林地區（4） =====
+      { name: "口湖線",   color: "brown",   region: "雲林地區", labelPos: { lat: 23.56, lng: 120.15 }, 
+      points: [
+          { name: "台子村世昌平價中心前", lat: 23.5615949885164, lng: 120.142148964855 },
+          { name: "金湖-龍台宮", lat: 23.575250028051, lng: 120.14759620416 },
+          { name: "口湖7-11便利商店(會水宮與線164交叉口)", lat: 23.5849188340377, lng: 120.182533879213 },
+          { name: "口湖鄉公所", lat: 23.5823462241488, lng: 120.185237344676 },
+          { name: "拔拉腳(164縣.143雲道交叉路口)", lat: 23.5772524126233, lng: 120.192456126955 },
+          { name: "大溝社區公車站", lat: 23.5740836190372, lng: 120.2118658787 },
+          { name: "頂尖山公車站牌", lat: 23.573030479382, lng: 120.225941359757 },
+          { name: "全家便利商店", lat: 23.5718719504794, lng: 120.239656003437 },
+          { name: "水林鄉公所", lat: 23.572566809971, lng: 120.24577593373 },
+          { name: "土間厝派出所紅綠燈轉角處(隨招隨停)", lat: 23.5688214638967, lng: 120.268297178076 },
+          { name: "樹腳社區牌樓", lat: 23.5790113291007, lng: 120.278612782319 },
+          { name: "全家便利商店(大同路與文仁路交叉口)", lat: 23.574641795347, lng: 120.293083377434 },
+          { name: "北港鎮公所旁-公園路台灣大哥大前", lat: 23.5754710516551, lng: 120.301965620319 },
+          { name: "義民路合作金庫", lat: 23.5687009423707, lng: 120.302440280161 },
+          { name: "台糖量販店(麥當勞對面)", lat:23.5705687748253, lng: 120.299535150692 },
+          { name: "北美派出所", lat: 23.5596375572107, lng: 120.303169897464 },
+          { name: "新港國小", lat: 23.5560194729745, lng: 120.345419322871 },
+          { name: "新港鄉公所", lat: 23.5516643345096, lng: 120.347538047274 },
+          { name: "潭子墘嘉大家具", lat:23.5424713554299, lng: 120.335155538365 },
+          { name: "蒜頭派出所", lat:23.4929687208137, lng: 120.291818441365 },
+          { name: "嘉義長庚", lat: 23.46224401366492, lng: 120.28593830205163 }
+        ] },
+      { name: "元長線",   color: "teal",    region: "雲林地區", labelPos: { lat: 23.59, lng: 120.32 }, 
+    points: [
+          { name: "四湖溪底富安宮", lat: 23.6543734381823, lng: 120.270588067894 },
+          { name: "7-11(寶貝屋)", lat: 23.6495007896738, lng: 120.313477066506 },
+          { name: "元長農會客厝辦事處", lat: 23.6282798380747, lng: 120.335406999401 },
+          { name: "東庄公車站旁", lat: 23.6180748177934, lng: 120.334271206763 },
+          { name: "府番宮車站", lat: 23.5946368889963, lng: 120.320323243756 },
+          { name: "北港鎮公所旁-公園路台灣大哥大前", lat: 23.5754710516551, lng: 120.301965620319 },
+          { name: "義民路合作金庫", lat: 23.5687009423707, lng: 120.302440280161 },
+          { name: "北美派出所", lat: 23.5596375572107, lng: 120.303169897464 },
+          { name: "共和村老塗獅國術館公車站旁", lat: 23.5598878505397, lng: 120.327069095601 },
+          { name: "新港國小", lat: 23.5560194729745, lng: 120.345419322871 },
+          { name: "新港鄉公所", lat: 23.5516643345096, lng: 120.347538047274 },
+          { name: "潭子墘嘉大家具", lat: 23.5424713554299, lng: 120.335155538365 },
+          { name: "月眉派出所", lat: 23.5226690484527, lng: 120.351869856718 },
+          { name: "安和派出所", lat: 23.5138878430003, lng: 120.314918426304 },
+          { name: "嘉義長庚", lat: 23.46224401366492, lng: 120.28593830205163 }
+        ] },
+      { name: "四湖東線", color: "pink",    region: "雲林地區", labelPos: { lat: 23.58, lng: 120.23 },
+      points: [
+          { name: "巡天宮", lat: 23.6473721928496, lng: 120.255887982019},
+          { name: "參天宮", lat: 23.6386967068915, lng: 120.226716149081},
+          { name: "宏仁派出所", lat: 23.6067644189288, lng: 120.238380287571},
+          { name: "春埔福興宮", lat: 23.5979718596341, lng: 120.251483466566},
+          { name: "水林鄉公所", lat: 23.572566809971, lng: 120.24577593373},
+          { name: "土間厝派出所紅綠燈轉角處(隨招隨停)", lat: 23.5688214638967, lng: 120.268297178076},
+          { name: "樹腳社區牌樓", lat: 23.5790113291007, lng:120.278612782319},
+          { name: "全家便利商店(大同路與文仁路交叉口)", lat: 23.574641795347, lng: 120.293083377434 },
+          { name: "北港鎮公所旁-公園路台灣大哥大前", lat: 23.5754710516551, lng:120.301965620319},
+          { name: "義民路合作金庫", lat:23.5687009423707, lng:120.302440280161},
+          { name: "台糖量販店(麥當勞對面)", lat: 23.5705687748253, lng: 120.299535150692},
+          { name: "北美派出所", lat:23.5596375572107, lng: 120.303169897464},
+          { name: "共和村老塗獅國術館公車站旁", lat: 23.5598878505397, lng: 120.327069095601},
+          { name: "嘉義長庚", lat: 23.46224401366492, lng: 120.28593830205163 }
+        ] }, 
+      { name: "三條崙線", color: "gray",    region: "雲林地區", labelPos: { lat: 23.55, lng: 120.21 },
+      points: [
+          { name: "東洋調社區", lat: 23.6388275872538, lng: 120.205933588926},
+          { name: "飛東社區", lat: 23.6420849014858, lng:120.180494080499},
+          { name: "飛沙農會", lat: 23.6431787132604, lng: 120.17482768329},
+          { name: "三條崙派出所", lat: 23.6524775911699, lng: 120.157218578192},
+          { name: "和天宮", lat:23.64028569442, lng: 120.154951550954},
+          { name: "建陽國小", lat: 23.6334143460387, lng: 120.152300076979},
+          { name: "萡子寮普天宮", lat:23.6299665070192, lng:120.152623717544},
+          { name: "下崙福安宮", lat: 23.6183723843254, lng:120.162125683108},
+          { name: "下崙來來購物中心", lat: 23.6168455997444, lng:120.164651937669},
+          { name: "台17線成龍路口", lat:23.5571267810859, lng:120.167636151895},
+          { name: "椬梧派出所", lat: 23.5458478502572, lng: 120.188931730353},
+          { name: "瓊埔客運站", lat:23.5144776074496, lng: 120.210182580929},
+          { name: "崩山活動中心", lat: 23.5033930290225, lng: 120.22774428732},
+          { name: "嘉義長庚", lat: 23.46224401366492, lng: 120.28593830205163 }
+        ] }, 
+    ];
+
+    // region 顯示順序（固定）
+    const regionOrder = ["嘉義地區", "台南地區", "雲林地區"];
+
+    // ---------- 初始化地圖與 UI ----------
+    function initMap() {
+      map = new google.maps.Map(document.getElementById("map"), {
+        zoom: 10,
+        center: { lat: 23.3, lng: 120.4 }
+      });
+      directionsService = new google.maps.DirectionsService();
+      infoWindow = new google.maps.InfoWindow();
+
+      buildRegionControls();
+    }
+
+    // 建立三個地區的橫式勾選 UI
+   // 建立三個地區的橫式勾選 UI（取代原本的 buildRegionControls）
+function buildRegionControls() {
+  const container = document.getElementById("groupsContainer");
+  container.innerHTML = "";
+
+  regionOrder.forEach(regionName => {
+    const regionDiv = document.createElement("div");
+    regionDiv.className = "region";
+
+    const header = document.createElement("div");
+    header.className = "region-header";
+    const title = document.createElement("strong");
+    title.textContent = regionName;
+    header.appendChild(title);
+
+    // 全選 / 全清（改為針對同區塊內的 checkbox）
+    const btns = document.createElement("div");
+    const selectAllBtn = document.createElement("button");
+    selectAllBtn.className = "small-btn";
+    selectAllBtn.textContent = "全選";
+
+    const clearBtn = document.createElement("button");
+    clearBtn.className = "small-btn";
+    clearBtn.style.marginLeft = "6px";
+    clearBtn.textContent = "清除";
+
+    btns.appendChild(selectAllBtn);
+    btns.appendChild(clearBtn);
+    header.appendChild(btns);
+
+    regionDiv.appendChild(header);
+
+    const row = document.createElement("div");
+    row.className = "route-row";
+
+    // 加入該地區的 route 勾選（橫式）
+    routes.filter(r => r.region === regionName).forEach(route => {
+      const id = sanitizeId(route.name);
+      const label = document.createElement("label");
+      label.className = "route-item";
+      label.htmlFor = id;
+
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.id = id;
+      cb.dataset.route = route.name;
+
+      const span = document.createElement("span");
+      span.textContent = route.name;
+
+      // 勾選事件（既有邏輯保留）
+      cb.addEventListener("change", function() {
+        if (this.checked) drawRoute(route);
+        else clearRoute(route.name);
+      });
+
+      label.appendChild(cb);
+      label.appendChild(span);
+      row.appendChild(label);
+    });
+
+    // 按鈕行為：針對 row 內的所有 checkbox 操作並觸發 change 事件
+    selectAllBtn.onclick = () => {
+      const cbs = row.querySelectorAll('input[type="checkbox"]');
+      cbs.forEach(cb => {
+        if (!cb.checked) {
+          cb.checked = true;
+          cb.dispatchEvent(new Event('change'));
+        }
+      });
+    };
+    clearBtn.onclick = () => {
+      const cbs = row.querySelectorAll('input[type="checkbox"]');
+      cbs.forEach(cb => {
+        if (cb.checked) {
+          cb.checked = false;
+          cb.dispatchEvent(new Event('change'));
+        }
+      });
+    };
+
+    regionDiv.appendChild(row);
+    container.appendChild(regionDiv);
+  });
+}
+
+// 可保留但改寫成用在其他情況（非必要，因為上面按鈕已直接操控 checkbox）
+function toggleRegion(regionName, check) {
+  // 這裡改為尋找對應區塊內的 checkbox（保留相容）
+  const container = document.getElementById("groupsContainer");
+  const regionDivs = Array.from(container.querySelectorAll(".region"));
+  for (const div of regionDivs) {
+    const title = div.querySelector(".region-header strong");
+    if (title && title.textContent === regionName) {
+      const cbs = div.querySelectorAll('input[type="checkbox"]');
+      cbs.forEach(cb => {
+        if (cb.checked === check) return;
+        cb.checked = check;
+        cb.dispatchEvent(new Event('change'));
+      });
+      break;
+    }
+  }
+}
+
+
+    // 全選或清除某地區
+    function toggleRegion(regionName, check) {
+      routes.filter(r => r.region === regionName).forEach(route => {
+        const id = sanitizeId(route.name);
+        const cb = document.getElementById(id);
+        if (!cb) return;
+        if (cb.checked === check) return;
+        cb.checked = check;
+        if (check) drawRoute(route); else clearRoute(route.name);
+      });
+    }
+
+    // ------------ 畫路線 / 清除路線 ------------
+    function drawRoute(route) {
+      if (routeRenderers[route.name]) return; // 已畫過就跳過
+      const directionsRenderer = new google.maps.DirectionsRenderer({
+        map: map,
+        polylineOptions: { strokeColor: route.color, strokeWeight: 4 },
+        suppressMarkers: true
+      });
+
+      directionsService.route(
+        {
+          origin: route.points[0],
+          destination: route.points[route.points.length - 1],
+          waypoints: route.points.slice(1, -1).map(p => ({ location: p })),
+          travelMode: "DRIVING"
+        },
+        (response, status) => {
+          if (status === "OK") {
+            directionsRenderer.setDirections(response);
+
+            // 加 Marker（站點）
+            const markers = route.points.map(p => {
+              const marker = new google.maps.Marker({
+                position: p,
+                map: map,
+                title: p.name
+              });
+              marker.addListener("click", () => {
+                infoWindow.setContent(`<b>${p.name}</b>`);
+                infoWindow.open(map, marker);
+              });
+              return marker;
+            });
+
+            // 路線標籤
+            const labelMarker = new google.maps.Marker({
+              position: route.labelPos,
+              map: map,
+              label: { text: route.name, fontSize: "14px", fontWeight: "bold", color: route.color },
+              icon: { path: google.maps.SymbolPath.CIRCLE, scale: 0 }
+            });
+
+            routeRenderers[route.name] = { directionsRenderer, markers: [...markers, labelMarker] };
+          } else {
+            console.error(`路線 ${route.name} 失敗:`, status);
+            directionsRenderer.setMap(null);
+          }
+        }
+      );
+    }
+
+    function clearRoute(name) {
+      if (!routeRenderers[name]) return;
+      routeRenderers[name].directionsRenderer.setMap(null);
+      routeRenderers[name].markers.forEach(m => m.setMap(null));
+      delete routeRenderers[name];
+    }
+
+    // ---------- 小工具 ----------
+    function sanitizeId(name) {
+      return name.replace(/\s+/g, "_").replace(/[^\w\-]/g, "");
+    }
+
+    // 假資料：隨機產生三個點（示範用）
+    function demoPoints() {
+      return [
+        { name: "起點", lat: 23.3 + Math.random() * 0.12, lng: 120.45 - Math.random() * 0.15 },
+        { name: "中途站", lat: 23.35 + Math.random() * 0.12, lng: 120.35 - Math.random() * 0.12 },
+        { name: "終點", lat: 23.45 + Math.random() * 0.12, lng: 120.30 - Math.random() * 0.12 }
+      ];
+    }
+
+    window.onload = initMap;
+  </script>
+</body>
+</html>
